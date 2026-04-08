@@ -1,0 +1,323 @@
+package com.claudecode.ui.renderer;
+
+import com.claudecode.core.message.ThinkingBlock;
+import com.claudecode.ui.Ansi;
+import com.claudecode.ui.AnsiColor;
+import com.claudecode.ui.AnsiStyle;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.util.concurrent.atomic.AtomicReference;
+
+/**
+ * Enhanced thinking block renderer with shimmer animation.
+ * Task 59.6: Thinking block renderer with shimmer effect
+ *
+ * Features:
+ * - Subtle shimmer animation effect
+ * - Duration display
+ * - Token count
+ * - Truncation for long thinking
+ * - Expand/collapse support
+ */
+public class ThinkingBlockRenderer {
+
+    private static final int MAX_THINKING_DISPLAY = 500;
+    private static final int MAX_THINKING_PREVIEW = 100;
+    private static final Duration SHIMMER_PERIOD = Duration.ofMillis(1500);
+
+    // Shimmer colors
+    private static final AnsiColor[] SHIMMER_COLORS = {
+            AnsiColor.GRAY,
+            AnsiColor.WHITE,
+            AnsiColor.GRAY
+    };
+
+    private final AtomicReference<Instant> thinkingStartTime = new AtomicReference<>();
+
+    public ThinkingBlockRenderer() {}
+
+    /**
+     * Start tracking thinking time.
+     */
+    public void startThinking() {
+        thinkingStartTime.set(Instant.now());
+    }
+
+    /**
+     * Stop tracking thinking time.
+     */
+    public void stopThinking() {
+        thinkingStartTime.set(null);
+    }
+
+    /**
+     * Render a thinking block.
+     */
+    public String render(ThinkingBlock block) {
+        if (block == null || block.thinking() == null) {
+            return "";
+        }
+
+        String thinking = block.thinking();
+        Duration duration = getDuration();
+
+        return renderThinking(thinking, duration, thinking.length(), false);
+    }
+
+    /**
+     * Render thinking block in compact mode.
+     */
+    public String renderCompact(ThinkingBlock block) {
+        if (block == null || block.thinking() == null) {
+            return "";
+        }
+
+        String thinking = block.thinking();
+        int charCount = thinking.length();
+        Duration duration = getDuration();
+
+        return renderThinkingCompact(charCount, duration);
+    }
+
+    /**
+     * Render thinking block with shimmer animation.
+     *
+     * @param block the thinking block
+     * @param shimmerPhase phase of the shimmer animation (0-1)
+     * @return rendered thinking with shimmer effect
+     */
+    public String renderWithShimmer(ThinkingBlock block, double shimmerPhase) {
+        if (block == null || block.thinking() == null) {
+            return "";
+        }
+
+        String thinking = block.thinking();
+        Duration duration = getDuration();
+
+        return renderThinkingWithShimmer(thinking, duration, thinking.length(), shimmerPhase, false);
+    }
+
+    /**
+     * Render thinking preview (first N characters).
+     */
+    public String renderPreview(ThinkingBlock block) {
+        if (block == null || block.thinking() == null) {
+            return "";
+        }
+
+        String thinking = block.thinking();
+        Duration duration = getDuration();
+
+        if (thinking.length() > MAX_THINKING_PREVIEW) {
+            return renderThinking(thinking.substring(0, MAX_THINKING_PREVIEW) + "...",
+                    duration, thinking.length(), true);
+        }
+        return renderThinking(thinking, duration, thinking.length(), false);
+    }
+
+    private String renderThinking(String thinking, Duration duration, int totalChars, boolean truncated) {
+        StringBuilder sb = new StringBuilder();
+
+        // Header with marker
+        String durationStr = formatDuration(duration);
+        sb.append(Ansi.colored("  ┌─ ", AnsiColor.GRAY));
+        sb.append(Ansi.colored("💭 Thinking", AnsiColor.MAGENTA));
+        sb.append(Ansi.styled(" " + durationStr, AnsiStyle.DIM));
+
+        if (totalChars > MAX_THINKING_DISPLAY) {
+            sb.append(Ansi.styled(" [" + formatTokens(totalChars) + "]", AnsiStyle.DIM));
+        }
+
+        if (truncated) {
+            sb.append(Ansi.styled(" [truncated]", AnsiColor.YELLOW));
+        }
+
+        sb.append(" ".repeat(Math.max(0, 30 - durationStr.length())));
+        sb.append(Ansi.colored("┐", AnsiColor.GRAY));
+        sb.append("\n");
+
+        // Content
+        String displayText = thinking;
+        if (displayText.length() > MAX_THINKING_DISPLAY) {
+            displayText = displayText.substring(0, MAX_THINKING_DISPLAY);
+        }
+
+        for (String line : displayText.split("\n", -1)) {
+            sb.append(Ansi.colored("  │ ", AnsiColor.GRAY));
+            sb.append(Ansi.styled(line, AnsiStyle.DIM));
+            sb.append("\n");
+        }
+
+        // Truncation notice
+        if (thinking.length() > MAX_THINKING_DISPLAY) {
+            sb.append(Ansi.colored("  │ ", AnsiColor.GRAY));
+            sb.append(Ansi.styled("... " + (thinking.length() - MAX_THINKING_DISPLAY) + " more characters", AnsiColor.YELLOW));
+            sb.append("\n");
+        }
+
+        // Footer
+        sb.append(Ansi.colored("  └", AnsiColor.GRAY));
+        sb.append("─".repeat(Math.max(0, 50)));
+        sb.append(Ansi.colored("┘", AnsiColor.GRAY));
+
+        return sb.toString();
+    }
+
+    private String renderThinkingCompact(int charCount, Duration duration) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(Ansi.colored("  💭 ", AnsiColor.MAGENTA));
+        sb.append(Ansi.styled("Thinking", AnsiStyle.DIM));
+        sb.append(Ansi.styled(" " + formatDuration(duration), AnsiStyle.DIM));
+        sb.append(Ansi.styled(" [" + formatTokens(charCount) + "]", AnsiStyle.DIM));
+        return sb.toString();
+    }
+
+    private String renderThinkingWithShimmer(String thinking, Duration duration,
+                                            int totalChars, double shimmerPhase,
+                                            boolean truncated) {
+        StringBuilder sb = new StringBuilder();
+
+        // Header with shimmer
+        String durationStr = formatDuration(duration);
+        sb.append(Ansi.colored("  ┌─ ", AnsiColor.GRAY));
+        sb.append(applyShimmer("💭 Thinking", shimmerPhase));
+        sb.append(Ansi.styled(" " + durationStr, AnsiStyle.DIM));
+
+        if (totalChars > MAX_THINKING_DISPLAY) {
+            sb.append(Ansi.styled(" [" + formatTokens(totalChars) + "]", AnsiStyle.DIM));
+        }
+
+        sb.append(" ".repeat(Math.max(0, 30 - durationStr.length())));
+        sb.append(Ansi.colored("┐", AnsiColor.GRAY));
+        sb.append("\n");
+
+        // Content with subtle shimmer on first few characters
+        String displayText = thinking;
+        if (displayText.length() > MAX_THINKING_DISPLAY) {
+            displayText = displayText.substring(0, MAX_THINKING_DISPLAY);
+        }
+
+        String[] lines = displayText.split("\n", -1);
+        for (int i = 0; i < lines.length; i++) {
+            String line = lines[i];
+            sb.append(Ansi.colored("  │ ", AnsiColor.GRAY));
+
+            // Apply shimmer to first line only
+            if (i == 0 && !line.isEmpty()) {
+                int shimmerLength = Math.min(line.length(), Math.max(1, (int) (shimmerPhase * line.length())));
+                sb.append(applyShimmer(line.substring(0, shimmerLength), shimmerPhase));
+                if (shimmerLength < line.length()) {
+                    sb.append(Ansi.styled(line.substring(shimmerLength), AnsiStyle.DIM));
+                }
+            } else {
+                sb.append(Ansi.styled(line, AnsiStyle.DIM));
+            }
+            sb.append("\n");
+        }
+
+        // Footer
+        if (thinking.length() > MAX_THINKING_DISPLAY) {
+            sb.append(Ansi.colored("  │ ", AnsiColor.GRAY));
+            sb.append(Ansi.styled("... " + (thinking.length() - MAX_THINKING_DISPLAY) + " more chars", AnsiColor.YELLOW));
+            sb.append("\n");
+        }
+
+        sb.append(Ansi.colored("  └"));
+        sb.append("─".repeat(Math.max(0, 50)));
+        sb.append(Ansi.colored("┘", AnsiColor.GRAY));
+
+        return sb.toString();
+    }
+
+    /**
+     * Apply shimmer effect to text.
+     * Shimmer is a subtle brightness wave that moves across the text.
+     *
+     * @param text the text to apply shimmer to
+     * @param phase phase of the shimmer animation (0.0 - 1.0)
+     * @return the text with shimmer ANSI styling
+     */
+    private String applyShimmer(String text, double phase) {
+        if (text == null || text.isEmpty()) {
+            return "";
+        }
+
+        // Calculate which characters should be highlighted
+        int highlightStart = (int) (phase * text.length()) % (text.length() + 5);
+        int highlightEnd = Math.min(text.length(), highlightStart + 3);
+
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < text.length(); i++) {
+            if (i >= highlightStart && i < highlightEnd) {
+                // Highlighted character
+                sb.append(Ansi.styled(String.valueOf(text.charAt(i), AnsiColor.WHITE, AnsiStyle.BOLD));
+            } else {
+                sb.append(text.charAt(i));
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Calculate shimmer phase for animation.
+     * Call this repeatedly to animate.
+     *
+     * @return shimmer phase (0.0 - 1.0)
+     */
+    public static double calculateShimmerPhase(Instant start) {
+        if (start == null) return 0;
+        long ms = Duration.between(start, Instant.now()).toMillis() % SHIMMER_PERIOD.toMillis();
+        return (double) ms / SHIMMER_PERIOD.toMillis();
+    }
+
+    private Duration getDuration() {
+        Instant start = thinkingStartTime.get();
+        if (start == null) return Duration.ZERO;
+        return Duration.between(start, Instant.now());
+    }
+
+    private String formatDuration(Duration d) {
+        long seconds = d.getSeconds();
+        if (seconds < 60) {
+            return seconds + "s";
+        } else {
+            long minutes = seconds / 60;
+            seconds = seconds % 60;
+            return minutes + "m " + seconds + "s";
+        }
+    }
+
+    private String formatTokens(int chars) {
+        // Rough estimate: 4 chars ≈ 1 token
+        int tokens = chars / 4;
+        if (tokens >= 1000) {
+            return String.format("%.1fk tokens", tokens / 1000.0);
+        }
+        return tokens + " tokens";
+    }
+
+    /**
+     * Render thinking summary line (for collapsed view).
+     */
+    public String renderSummary(ThinkingBlock block) {
+        if (block == null || block.thinking() == null) {
+            return "";
+        }
+
+        String thinking = block.thinking();
+        Duration duration = getDuration();
+        int tokens = thinking.length() / 4;
+
+        return Ansi.colored("  💭 ", AnsiColor.MAGENTA)
+                + Ansi.styled("Thinking for " + formatDuration(duration), AnsiStyle.DIM)
+                + Ansi.styled(" (" + formatTokens(thinking.length()) + ")", AnsiStyle.DIM);
+    }
+
+    /**
+     * Get current thinking duration.
+     */
+    public Duration getCurrentDuration() {
+        return getDuration();
+    }
+}
