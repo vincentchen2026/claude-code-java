@@ -2,6 +2,7 @@ package com.claudecode.tools;
 
 import com.claudecode.core.engine.AbortController;
 import com.claudecode.core.engine.ToolExecutionContext;
+import com.claudecode.core.engine.ToolExecutionContext.ProgressSink;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,7 +23,7 @@ class FileToolsTest {
     Path tempDir;
 
     private ToolExecutionContext ctx() {
-        return ToolExecutionContext.of(new AbortController(), "test-session");
+        return new ToolExecutionContext(new AbortController(), "test-session", tempDir.toString(), ProgressSink.NOOP);
     }
 
     // --- FileReadTool tests ---

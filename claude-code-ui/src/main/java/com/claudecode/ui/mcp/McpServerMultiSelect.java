@@ -52,7 +52,7 @@ public class McpServerMultiSelect {
 
             writer.println(Ansi.styled("│", AnsiColor.CYAN) + cursor + checkbox + " " +
                 Ansi.colored(server.name(), isSelected ? AnsiColor.WHITE : AnsiColor.GRAY) +
-                " " + Ansi.styled("(" + server.transport() + ")", AnsiColor.DIM));
+                " " + Ansi.styled("(" + server.transport() + ")", AnsiStyle.DIM));
 
             displayedIndex++;
         }

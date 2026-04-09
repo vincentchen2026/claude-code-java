@@ -53,7 +53,7 @@ public class McpCapabilityPanel {
                 writer.println(Ansi.styled("│", AnsiColor.CYAN) + "   " +
                     Ansi.colored(req.message(), AnsiColor.WHITE));
                 writer.println(Ansi.styled("│", AnsiColor.CYAN) + "     " +
-                    Ansi.styled("[1] Allow  [2] Deny  [q] Dismiss", AnsiColor.DIM));
+                    Ansi.styled("[1] Allow  [2] Deny  [q] Dismiss", AnsiStyle.DIM));
             }
         }
 
@@ -64,11 +64,11 @@ public class McpCapabilityPanel {
             for (Warning w : warnings) {
                 if (count++ >= 3) {
                     writer.println(Ansi.styled("│", AnsiColor.CYAN) + "   " +
-                        Ansi.colored("... and " + (warnings.size() - 3) + " more", AnsiColor.DIM));
+                        Ansi.styled("... and " + (warnings.size() - 3) + " more", AnsiStyle.DIM));
                     break;
                 }
                 writer.println(Ansi.styled("│", AnsiColor.CYAN) + "   " +
-                    Ansi.colored("[" + w.timestamp() + "]", AnsiColor.DIM) + " " +
+                    Ansi.styled("[" + w.timestamp() + "]", AnsiStyle.DIM) + " " +
                     Ansi.colored(w.message(), AnsiColor.YELLOW));
             }
         }

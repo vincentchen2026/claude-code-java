@@ -50,6 +50,7 @@ public final class CommandFactory {
         registry.register(new CopyCommand());
         registry.register(new FeedbackCommand());
         registry.register(new McpCommand());
+        registry.register(new PluginCommand());
 
         return registry;
     }

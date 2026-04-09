@@ -10,7 +10,6 @@ import org.slf4j.LoggerFactory;
 
 import java.io.*;
 import java.net.HttpURLConnection;
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -27,10 +26,16 @@ public class OpenAiCompatClient implements LlmClient {
     private final ApiConfig.OpenAiConfig config;
     private final ObjectMapper mapper;
     private final String apiUrl;
+    private final HttpExecutor httpExecutor;
 
     public OpenAiCompatClient(ApiConfig.OpenAiConfig config) {
+        this(config, new RealHttpExecutor());
+    }
+
+    public OpenAiCompatClient(ApiConfig.OpenAiConfig config, HttpExecutor httpExecutor) {
         this.config = config;
         this.mapper = new ObjectMapper();
+        this.httpExecutor = httpExecutor;
         this.apiUrl = (config.baseUrl() != null ? config.baseUrl() : "https://api.openai.com/v1")
                 + "/chat/completions";
     }
@@ -40,13 +45,18 @@ public class OpenAiCompatClient implements LlmClient {
         log.info("OpenAI-compat streaming request to {} model {}", apiUrl, config.model());
 
         try {
-            HttpURLConnection conn = createConnection(apiUrl);
+            HttpURLConnection conn = httpExecutor.createConnection(apiUrl);
+            conn.setRequestProperty("Authorization", "Bearer " + config.apiKey());
+            conn.setRequestProperty("Accept", "application/json");
+            if (config.baseUrl() != null && config.baseUrl().contains("azure")) {
+                conn.setRequestProperty("api-key", config.apiKey());
+            }
             String requestBody = buildChatRequest(request);
-            sendRequest(conn, requestBody);
+            httpExecutor.sendRequest(conn, requestBody);
 
-            int responseCode = conn.getResponseCode();
+            int responseCode = httpExecutor.getResponseCode(conn);
             if (responseCode != 200) {
-                String errorBody = readErrorStream(conn);
+                String errorBody = httpExecutor.readErrorBody(conn);
                 throw new ApiException("OpenAI API error: " + responseCode + " - " + errorBody, responseCode);
             }
 
@@ -65,17 +75,22 @@ public class OpenAiCompatClient implements LlmClient {
         log.info("OpenAI-compat request to {} model {}", apiUrl, config.model());
 
         try {
-            HttpURLConnection conn = createConnection(apiUrl);
+            HttpURLConnection conn = httpExecutor.createConnection(apiUrl);
+            conn.setRequestProperty("Authorization", "Bearer " + config.apiKey());
+            conn.setRequestProperty("Accept", "application/json");
+            if (config.baseUrl() != null && config.baseUrl().contains("azure")) {
+                conn.setRequestProperty("api-key", config.apiKey());
+            }
             String requestBody = buildChatRequest(request);
-            sendRequest(conn, requestBody);
+            httpExecutor.sendRequest(conn, requestBody);
 
-            int responseCode = conn.getResponseCode();
+            int responseCode = httpExecutor.getResponseCode(conn);
             if (responseCode != 200) {
-                String errorBody = readErrorStream(conn);
+                String errorBody = httpExecutor.readErrorBody(conn);
                 throw new ApiException("OpenAI API error: " + responseCode + " - " + errorBody, responseCode);
             }
 
-            String responseBody = readResponseBody(conn);
+            String responseBody = httpExecutor.readResponseBody(conn);
             return parseNonStreamingResponse(responseBody);
 
         } catch (ApiException e) {
@@ -93,22 +108,6 @@ public class OpenAiCompatClient implements LlmClient {
 
     public String getBaseUrl() {
         return config.baseUrl();
-    }
-
-    private HttpURLConnection createConnection(String url) throws IOException {
-        HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
-        conn.setRequestMethod("POST");
-        conn.setRequestProperty("Content-Type", "application/json");
-        conn.setRequestProperty("Authorization", "Bearer " + config.apiKey());
-        conn.setRequestProperty("Accept", "application/json");
-        if (config.baseUrl() != null && config.baseUrl().contains("azure")) {
-            conn.setRequestProperty("api-key", config.apiKey());
-            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
-        }
-        conn.setDoOutput(true);
-        conn.setConnectTimeout(30000);
-        conn.setReadTimeout(120000);
-        return conn;
     }
 
     private String buildChatRequest(CreateMessageRequest request) throws Exception {
@@ -196,39 +195,6 @@ public class OpenAiCompatClient implements LlmClient {
         }
 
         return node;
-    }
-
-    private void sendRequest(HttpURLConnection conn, String body) throws IOException {
-        try (OutputStream os = conn.getOutputStream()) {
-            byte[] input = body.getBytes(StandardCharsets.UTF_8);
-            os.write(input, 0, input.length);
-        }
-    }
-
-    private String readResponseBody(HttpURLConnection conn) throws IOException {
-        try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
-            StringBuilder response = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) {
-                response.append(line);
-            }
-            return response.toString();
-        }
-    }
-
-    private String readErrorStream(HttpURLConnection conn) {
-        try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(conn.getErrorStream(), StandardCharsets.UTF_8))) {
-            StringBuilder error = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) {
-                error.append(line);
-            }
-            return error.toString();
-        } catch (Exception e) {
-            return "Could not read error body";
-        }
     }
 
     private Iterator<StreamEvent> parseStreamingResponse(HttpURLConnection conn) {

@@ -26,7 +26,17 @@ class LlmClientFactoryTest {
                 new ApiConfig.OpenAiConfig("key", "gpt-4", "https://api.openai.com"),
                 null, null);
 
-        LlmClient client = LlmClientFactory.create(config);
+        // Use mock HTTP executor to avoid real API calls
+        String jsonResponse = """
+            {
+                "id": "chatcmpl-123",
+                "model": "gpt-4",
+                "choices": [{"message": {"content": "Hello"}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 5}
+            }
+            """;
+        HttpExecutor mockExecutor = MockHttpExecutor.success(jsonResponse);
+        LlmClient client = LlmClientFactory.create(config, mockExecutor);
         assertInstanceOf(OpenAiCompatClient.class, client);
         assertEquals("gpt-4", client.getModel());
 

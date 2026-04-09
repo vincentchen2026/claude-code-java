@@ -20,4 +20,15 @@ public final class LlmClientFactory {
             case VERTEX -> new VertexClient(config.vertex());
         };
     }
+
+    /**
+     * Creates an LlmClient for the given configuration with a custom HTTP executor.
+     * Used for testing to inject mock HTTP responses.
+     */
+    public static LlmClient create(ApiConfig config, HttpExecutor httpExecutor) {
+        if (config.provider() != ApiConfig.ApiProvider.OPENAI_COMPAT) {
+            throw new IllegalArgumentException("Custom HTTP executor only supported for OPENAI_COMPAT");
+        }
+        return new OpenAiCompatClient(config.openai(), httpExecutor);
+    }
 }

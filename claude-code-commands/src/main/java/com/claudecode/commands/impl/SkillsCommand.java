@@ -3,12 +3,19 @@ package com.claudecode.commands.impl;
 import com.claudecode.commands.Command;
 import com.claudecode.commands.CommandContext;
 import com.claudecode.commands.CommandResult;
+import com.claudecode.services.skills.RemoteSkillLoader;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
-import java.util.stream.Collectors;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 
 public class SkillsCommand implements Command {
 
@@ -28,44 +35,63 @@ public class SkillsCommand implements Command {
         StringBuilder sb = new StringBuilder();
         Path skillsDir = Path.of(context.workingDirectory(), SKILLS_DIR);
 
-        String action = args != null && !args.isBlank() ? args.trim().toLowerCase() : "list";
+        // Extract action (first word) and remaining args
+        String action;
+        String remaining;
+        if (args == null || args.isBlank()) {
+            action = "list";
+            remaining = "";
+        } else {
+            String trimmed = args.trim();
+            int spaceIdx = trimmed.indexOf(' ');
+            if (spaceIdx > 0) {
+                action = trimmed.substring(0, spaceIdx).toLowerCase();
+                remaining = trimmed.substring(spaceIdx + 1).trim();
+            } else {
+                action = trimmed.toLowerCase();
+                remaining = "";
+            }
+        }
 
         return switch (action) {
             case "list", "ls" -> listSkills(sb, skillsDir);
             case "add", "create" -> {
-                if (args != null && args.contains(" ")) {
-                    String skillName = args.substring(args.indexOf(' ') + 1).trim();
-                    yield createSkill(sb, skillsDir, skillName);
+                if (!remaining.isBlank()) {
+                    yield createSkill(sb, skillsDir, remaining);
                 }
                 yield CommandResult.of("Usage: /skills add <skill-name>\nExample: /skills add my-custom-skill");
             }
             case "remove", "delete", "rm" -> {
-                if (args != null && args.contains(" ")) {
-                    String skillName = args.substring(args.indexOf(' ') + 1).trim();
-                    yield removeSkill(sb, skillsDir, skillName);
+                if (!remaining.isBlank()) {
+                    yield removeSkill(sb, skillsDir, remaining);
                 }
                 yield CommandResult.of("Usage: /skills remove <skill-name>");
             }
             case "show", "view" -> {
-                if (args != null && args.contains(" ")) {
-                    String skillName = args.substring(args.indexOf(' ') + 1).trim();
-                    yield showSkill(sb, skillsDir, skillName);
+                if (!remaining.isBlank()) {
+                    yield showSkill(sb, skillsDir, remaining);
                 }
                 yield CommandResult.of("Usage: /skills show <skill-name>");
             }
             case "enable" -> {
-                if (args != null && args.contains(" ")) {
-                    String skillName = args.substring(args.indexOf(' ') + 1).trim();
-                    yield enableSkill(sb, skillsDir, skillName);
+                if (!remaining.isBlank()) {
+                    yield enableSkill(sb, skillsDir, remaining);
                 }
                 yield CommandResult.of("Usage: /skills enable <skill-name>");
             }
             case "disable" -> {
-                if (args != null && args.contains(" ")) {
-                    String skillName = args.substring(args.indexOf(' ') + 1).trim();
-                    yield disableSkill(sb, skillsDir, skillName);
+                if (!remaining.isBlank()) {
+                    yield disableSkill(sb, skillsDir, remaining);
                 }
                 yield CommandResult.of("Usage: /skills disable <skill-name>");
+            }
+            case "install" -> {
+                if (!remaining.isBlank()) {
+                    yield installSkill(sb, skillsDir, remaining);
+                }
+                yield CommandResult.of("Usage: /skills install <name-or-url>\n" +
+                    "Example: /skills install superpower\n" +
+                    "Example: /skills install https://example.com/skills/my-skill.md");
             }
             default -> showHelp(sb);
         };
@@ -81,7 +107,8 @@ public class SkillsCommand implements Command {
         sb.append("  /skills show <name>      - Show skill details\n");
         sb.append("  /skills remove <name>    - Delete a skill\n");
         sb.append("  /skills enable <name>    - Enable a skill\n");
-        sb.append("  /skills disable <name>   - Disable a skill\n\n");
+        sb.append("  /skills disable <name>   - Disable a skill\n");
+        sb.append("  /skills install <source>  - Install from name or URL\n\n");
         sb.append("Skills are markdown files with instructions for Claude Code.");
         return CommandResult.of(sb.toString());
     }
@@ -274,6 +301,97 @@ public class SkillsCommand implements Command {
             return firstLine;
         } catch (Exception e) {
             return "(unable to read)";
+        }
+    }
+
+    private CommandResult installSkill(StringBuilder sb, Path skillsDir, String source) {
+        if (source == null || source.isBlank()) {
+            return CommandResult.of("Source cannot be empty.");
+        }
+
+        // Determine if source is a URL or a skill name
+        boolean isUrl = source.startsWith("http://") || source.startsWith("https://");
+
+        try {
+            if (!skillsDir.toFile().exists()) {
+                Files.createDirectories(skillsDir);
+            }
+
+            String content;
+            String skillName;
+
+            if (isUrl) {
+                // Download from URL
+                sb.append("Installing skill from URL: ").append(source).append("\n\n");
+                content = downloadFromUrl(source);
+                // Extract skill name from URL path
+                String urlPath = source.substring(source.lastIndexOf('/') + 1);
+                skillName = urlPath.replace(".md", "").replaceAll("[^a-zA-Z0-9-_]", "-");
+            } else {
+                // Treat as skill name - use a default registry or GitHub
+                sb.append("Installing skill from registry: ").append(source).append("\n\n");
+                String githubUrl = "https://raw.githubusercontent.com/anthropics/claude-code-skills/main/" + source + ".md";
+                try {
+                    content = downloadFromUrl(githubUrl);
+                    skillName = source;
+                } catch (Exception e) {
+                    // Fallback: try direct URL format for common skill repos
+                    String alternateUrl = "https://raw.githubusercontent.com/claude-code-skills/" + source + "/main/" + source + ".md";
+                    try {
+                        content = downloadFromUrl(alternateUrl);
+                        skillName = source;
+                    } catch (Exception ex) {
+                        return CommandResult.of("Failed to install skill '" + source + "':\n" +
+                            "- Registry not available\n" +
+                            "- Try installing from URL directly:\n" +
+                            "  /skills install https://example.com/skills/" + source + ".md\n\n" +
+                            "Error: " + e.getMessage());
+                    }
+                }
+            }
+
+            // Check if skill already exists
+            String fileName = sanitizeFileName(skillName);
+            Path skillFile = skillsDir.resolve(fileName + ".md");
+
+            if (skillFile.toFile().exists()) {
+                return CommandResult.of("Skill '" + skillName + "' already exists.\n" +
+                    "Remove it first with: /skills remove " + skillName);
+            }
+
+            // Save the skill
+            Files.writeString(skillFile, content);
+
+            sb.append("Installed skill: ").append(skillName).append("\n");
+            sb.append("File: ").append(skillFile);
+
+            return CommandResult.of(sb.toString());
+
+        } catch (IOException e) {
+            return CommandResult.of("Failed to install skill: " + e.getMessage());
+        }
+    }
+
+    private String downloadFromUrl(String urlStr) throws IOException {
+        try {
+            URI uri = URI.create(urlStr);
+            HttpRequest request = HttpRequest.newBuilder(uri)
+                .header("Accept", "text/plain")
+                .timeout(Duration.ofSeconds(30))
+                .GET()
+                .build();
+
+            HttpClient client = HttpClient.newHttpClient();
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() != 200) {
+                throw new IOException("HTTP " + response.statusCode() + ": " + response.body());
+            }
+
+            return response.body();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Download interrupted", e);
         }
     }
 }

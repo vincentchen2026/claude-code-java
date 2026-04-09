@@ -3,6 +3,8 @@ package com.claudecode.services.plugins;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.URL;
+import java.net.URLClassLoader;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -181,7 +183,36 @@ public class PluginOperations {
     }
 
     private static class PluginClassLoader extends ClassLoader {
-        PluginClassLoader(Path jarPath) {
+        private final URLClassLoader urlClassLoader;
+
+        PluginClassLoader(Path jarPath) throws Exception {
+            this.urlClassLoader = new URLClassLoader(
+                new java.net.URL[]{jarPath.toUri().toURL()},
+                PluginClassLoader.class.getClassLoader()
+            );
+        }
+
+        @Override
+        protected Class<?> findClass(String name) throws ClassNotFoundException {
+            try {
+                byte[] bytes = loadClassBytes(name);
+                if (bytes != null) {
+                    return defineClass(name, bytes, 0, bytes.length);
+                }
+            } catch (Exception e) {
+                log.debug("Failed to load class {} from plugin JAR", name, e);
+            }
+            throw new ClassNotFoundException(name);
+        }
+
+        private byte[] loadClassBytes(String className) throws Exception {
+            String resourcePath = className.replace('.', '/') + ".class";
+            try (var is = urlClassLoader.getResourceAsStream(resourcePath)) {
+                if (is == null) {
+                    return null;
+                }
+                return is.readAllBytes();
+            }
         }
     }
 

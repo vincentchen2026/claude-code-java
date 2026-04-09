@@ -26,8 +26,17 @@ class MultiModelBackendTest {
 
     @Test
     void openAiCompatClientCreateMessage() {
+        String jsonResponse = """
+            {
+                "id": "chatcmpl-123",
+                "model": "gpt-4",
+                "choices": [{"message": {"content": "Hello"}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 5}
+            }
+            """;
+        var httpExecutor = MockHttpExecutor.success(jsonResponse);
         var config = new ApiConfig.OpenAiConfig("sk-test", "gpt-4", "https://api.openai.com/v1");
-        var client = new OpenAiCompatClient(config);
+        var client = new OpenAiCompatClient(config, httpExecutor);
         var request = CreateMessageRequest.builder().model("gpt-4").build();
 
         ApiMessage response = client.createMessage(request);
@@ -37,13 +46,21 @@ class MultiModelBackendTest {
 
     @Test
     void openAiCompatClientStreamReturnsEvents() {
+        String sseResponse = """
+            data: {"choices":[{"delta":{"content":"Hi"}}]}
+
+            data: [DONE]
+            """;
+        var httpExecutor = MockHttpExecutor.success(sseResponse);
         var config = new ApiConfig.OpenAiConfig("sk-test", "gpt-4", "https://api.openai.com/v1");
-        var client = new OpenAiCompatClient(config);
+        var client = new OpenAiCompatClient(config, httpExecutor);
         var request = CreateMessageRequest.builder().model("gpt-4").build();
 
         Iterator<StreamEvent> stream = client.createMessageStream(request);
         assertTrue(stream.hasNext());
-        assertInstanceOf(StreamEvent.MessageStart.class, stream.next());
+        // The mock returns content, which should produce ContentBlockStart
+        StreamEvent first = stream.next();
+        assertInstanceOf(StreamEvent.ContentBlockStart.class, first);
     }
 
     // --- BedrockClient ---

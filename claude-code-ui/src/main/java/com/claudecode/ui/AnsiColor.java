@@ -11,8 +11,7 @@ public enum AnsiColor {
     MAGENTA("\u001B[35m"),
     CYAN("\u001B[36m"),
     WHITE("\u001B[37m"),
-    GRAY("\u001B[90m"),
-    DIM("\u001B[2m");
+    GRAY("\u001B[90m");
 
     private final String code;
 
